@@ -17,9 +17,27 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - name: Check required secrets
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+          TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
+          OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
+        run: |
+          missing=()
+          for name in SUPABASE_URL SUPABASE_SECRET_KEY TMDB_API_KEY; do
+            [ -z "${!name}" ] && missing+=("$name")
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error title=Missing secrets::Add these in Settings > Secrets and variables > Actions: ${missing[*]}"
+            exit 1
+          fi
+          [ -z "$OMDB_API_KEY" ] && echo "::warning title=OMDb skipped::OMDB_API_KEY not set; IMDb/RT/Metacritic scores will be skipped."
+          echo "All required secrets present."
 
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
           cache: pip
@@ -35,3 +53,15 @@ jobs:
           TMDB_API_KEY: ${{ secrets.TMDB_API_KEY }}
           OMDB_API_KEY: ${{ secrets.OMDB_API_KEY }}
         run: python scripts/sync/update_movies.py
+
+      - name: Trigger Cloudflare Pages rebuild
+        if: success()
+        env:
+          CLOUDFLARE_DEPLOY_HOOK: ${{ secrets.CLOUDFLARE_DEPLOY_HOOK }}
+        run: |
+          if [ -z "$CLOUDFLARE_DEPLOY_HOOK" ]; then
+            echo "CLOUDFLARE_DEPLOY_HOOK not set; skipping site rebuild."
+            exit 0
+          fi
+          curl -fsS -X POST "$CLOUDFLARE_DEPLOY_HOOK" > /dev/null
+          echo "Cloudflare Pages rebuild triggered."
