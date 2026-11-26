@@ -56,7 +56,22 @@ def env(name: str) -> str:
     return value
 
 
-SUPABASE_URL = env("SUPABASE_URL")
+def normalize_supabase_url(raw: str) -> str:
+    """Keep only scheme://host so a pasted REST URL (…/rest/v1/) or a trailing
+    slash or stray whitespace in the secret can't break PostgREST paths."""
+    from urllib.parse import urlparse
+
+    value = raw.strip().strip('"').strip("'")
+    if "://" not in value:
+        value = "https://" + value
+    parsed = urlparse(value)
+    if not parsed.netloc:
+        log.error("SUPABASE_URL is not a valid URL")
+        sys.exit(1)
+    return f"{parsed.scheme or 'https'}://{parsed.netloc}"
+
+
+SUPABASE_URL = normalize_supabase_url(env("SUPABASE_URL"))
 SUPABASE_SECRET_KEY = env("SUPABASE_SECRET_KEY")
 TMDB_API_KEY = env("TMDB_API_KEY")
 OMDB_API_KEY = os.getenv("OMDB_API_KEY", "")
